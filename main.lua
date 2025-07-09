@@ -14,7 +14,14 @@ local currEnemies = {}
 local backgroundTex
 local spawnCount = 5
 
+local shakeDuration = 0
+local shakeMagnitude = 0
+local shakeOffsetX, shakeOffsetY = 0, 0
+
 local currLevel = 1
+local isShopping = false
+local hitTracker = {}
+
 
 function applyDmg(dmg)
     dmgDoneTotal = dmgDoneTotal + dmg * multiplier
@@ -34,7 +41,7 @@ function clearDmg()
 end
 function load_level()
     local current = currLevel
-    local isShopping = false
+    isShopping = false
     
 end
 
@@ -87,12 +94,22 @@ function deepCopy(orig)
     return copy
 end
 
+function startShake(duration, magnitude)
+    shakeDuration = duration
+    shakeMagnitude = magnitude
+end
+function startTimeStop(duration)
+    timeStopDuration = duration
+    isTimeStopped = true
+end
+
 function love.load()
     load_level()
+    
 
     affineShader = love.graphics.newShader("assets/shaders/ui/crt.glsl")
     affineShader:send("resolution", {W, H})
-    affineShader:send("jitter", 0.02)            
+    affineShader:send("jitter", 0.002)            
     affineShader:send("alpha_scissor", 0.1) 
     math.randomseed(os.time())
     love.graphics.setDefaultFilter("nearest", "nearest")
@@ -109,7 +126,9 @@ function love.load()
             table.insert(currBalls, instance)
         end
     end
-    
+    for _, ball in ipairs(currBalls) do
+        hitTracker[ball] = {}
+    end
 
     for _, ball in ipairs(currBalls) do
         ball.effects.on_hit(ball)
@@ -123,26 +142,60 @@ function love.load()
     end
 end
 
+
+
 function love.update(dt)
-    for _ , ene in ipairs(currEnemies) do
-        if ene.active then
-            local hitbox = getEnemyHitbox(ene)
-            for _, ball in ipairs(currBalls) do
+    if isTimeStopped then
+        timeStopDuration = timeStopDuration - dt
+        if timeStopDuration <= 0 then
+            isTimeStopped = false
+            timeStopDuration = 0
+        end
+       
+        return
+    end
+
+    for _, ene in ipairs(currEnemies) do
+    if ene.active then
+        local hitbox = getEnemyHitbox(ene)
+        for _, ball in ipairs(currBalls) do
             if ball.active then
                 local bx = ball.pos[1] - ball.radius
                 local by = ball.pos[2] - ball.radius
                 local bw = ball.radius * 2
                 local bh = ball.radius * 2
+                
+                local collided = aabbCollide(hitbox.x, hitbox.y, hitbox.w, hitbox.h, bx, by, bw, bh)
+                local alreadyHit = hitTracker[ball][ene]
 
-                if aabbCollide(hitbox.x, hitbox.y, hitbox.w, hitbox.h, bx, by, bw, bh) then
-                    
-                    ene.active = false
-                    ball.active = false
+                if collided and not alreadyHit then
+                    -- First time hitting this enemy this collision
+                    ene.health = ene.health - ball.dmg
+
+                    if ene.health <= 0 then
+                        ene.active = false
+                        startShake(0.55, 2)
+                        startTimeStop(0.1)
+                    end
+
                     spawnParticles(ene.pos[1], ene.pos[2], ball.particleTex)
                     applyDmg(ball.dmg or 0)
+                    if ene.active == true then 
+                        startShake(0.25, 2)
+                        startTimeStop(0.02)
+                    end
+
+                    
+
+                    
+                    hitTracker[ball][ene] = true
+                elseif not collided and alreadyHit then
+                    
+                    hitTracker[ball][ene] = nil
                 end
             end
         end
+    
 
             
         end
@@ -173,6 +226,14 @@ function love.update(dt)
         if ps:getCount() == 0 then
             table.remove(particleSystems, i)
         end
+    end
+
+    if shakeDuration > 0 then
+        shakeDuration = shakeDuration - dt
+        shakeOffsetX = love.math.random(-shakeMagnitude, shakeMagnitude)
+        shakeOffsetY = love.math.random(-shakeMagnitude, shakeMagnitude)
+    else
+        shakeOffsetX, shakeOffsetY = 0, 0
     end
 end
 
@@ -226,10 +287,15 @@ function love.draw()
     end
 
     love.graphics.setCanvas()
-    love.graphics.draw(canvas, 0, 0, 0, scale, scale)
-    affineShader:send("time", love.timer.getTime())
+
+    
+    
+
+    
+    love.graphics.setColor(1, 1, 1)
+    love.graphics.draw(canvas, shakeOffsetX, shakeOffsetY, 0, scale, scale)
 
     love.graphics.setShader(affineShader)
-    love.graphics.draw(canvas, 0, 0, 0, scale, scale)
+    love.graphics.draw(canvas, shakeOffsetX, shakeOffsetY, 0, scale, scale)
     love.graphics.setShader()
 end

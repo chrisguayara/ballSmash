@@ -5,6 +5,7 @@ enemyTypes ={}
 enemyTypes.Squid = {
     name = "squid",
     pos = {0 , 0},
+    health = 28,
     collisionshape = {13,14},
     offset = {2,1},
     effects = {
